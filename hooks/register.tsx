@@ -76,7 +76,7 @@ export const register: Register = on => {
     const dir = await $.session.cwd()
     await loadDir($, dir)
     await loadDiff($)
-    await $.ui.open({ id: PANE, title: 'Browse', focus: true, columns: 120 })
+    await $.ui.open({ id: PANE, title: 'Browse', focus: true, closeOnEscape: true, columns: 100 })
     return { text: 'File browser opened.' }
   })
 
@@ -97,7 +97,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Code, Input } = $.ui.resolve(e)
+    const { Box, Text, Button, Code } = $.ui.resolve(e)
 
     const dir = await read($, cwd$)
     if (!dir) return <Box><Text dimColor>Run /browse to open</Text></Box>
@@ -113,158 +113,99 @@ export const register: Register = on => {
     const cols = e.props?.bodyColumns ?? 80
     const rows = (e.viewport?.rows ?? 24) - 2
     const leftW = Math.max(24, Math.min(cols - 30, Math.floor(cols * lay.col / 100)))
-    const filesH = Math.max(6, Math.floor((rows - 3) * lay.row / 100))
 
-    const perPage = Math.max(1, filesH - 4)
+    const perPage = 9
     const start = pg * perPage
     const visible = all.slice(start, start + perPage)
     const pages = Math.max(1, Math.ceil(all.length / perPage))
 
     const ext = sel?.split('.').pop() ?? ''
     const lines = content ? content.split('\n') : []
-    const viewH = Math.max(1, rows - 6)
+    const viewH = Math.max(1, rows - 4)
     const maxSc = Math.max(0, lines.length - viewH)
     const shown = lines.slice(sc, sc + viewH).join('\n')
 
-    const shortDir =
-      dir.length > leftW - 4 ? '...' + dir.slice(-(leftW - 7)) : dir
+    const hasDiff = gitDiff.length > 0 && gitDiff.includes('@@')
 
     return (
       <Box flexDirection="column">
-        <Box flexDirection="row" height={rows - 3}>
-          {/* Left: files + diff */}
+        {/* Main area: two columns */}
+        <Box flexDirection="row" flexGrow={1}>
+          {/* Left column: files on top, diff below */}
           <Box flexDirection="column" width={leftW}>
-            <Box flexDirection="column" height={filesH} borderStyle="round">
-              <Text bold color="cyan">
-                {' '}{shortDir}{' '}
-              </Text>
-              <Button
-                key="go-up"
-                hotkey="0"
-                variant="plain"
-                onPress={async () => {
-                  const parent = dir.replace(/\/[^/]+\/?$/, '') || '/'
-                  await loadDir($, parent)
-                  await loadDiff($)
-                }}
-              >
-                ../
-              </Button>
+            {/* File browser */}
+            <Box flexDirection="column" borderStyle="round">
+              <Text bold color="cyan">{dir}</Text>
+              <Button key="up" hotkey="0" variant="plain" onPress={async () => {
+                const parent = dir.replace(/\/[^/]+\/?$/, '') || '/'
+                await loadDir($, parent)
+                await loadDiff($)
+              }}>../</Button>
               {visible.map((entry, i) => (
-                <Button
-                  key={'f' + i}
-                  hotkey={String(i + 1) as any}
-                  variant="plain"
-                  onPress={async () => {
-                    const path = (dir === '/' ? '' : dir) + '/' + entry.name
-                    if (entry.isDir) {
-                      await loadDir($, path)
-                    } else {
-                      await loadFile($, path)
-                    }
-                  }}
-                >
-                  {entry.isDir ? '/' : ' '}{entry.name}
-                </Button>
+                <Button key={'e' + String(i)} hotkey={String(i + 1)} variant="plain" onPress={async () => {
+                  const path = (dir === '/' ? '' : dir) + '/' + entry.name
+                  if (entry.isDir) await loadDir($, path)
+                  else await loadFile($, path)
+                }}>{(entry.isDir ? '/' : ' ') + entry.name}</Button>
               ))}
-              <Text dimColor>
-                {' '}pg {pg + 1}/{pages} ({all.length} items)
-              </Text>
+              <Text dimColor>pg {pg + 1}/{pages} ({all.length})</Text>
             </Box>
+            {/* Diff */}
             <Box flexDirection="column" flexGrow={1} borderStyle="round">
-              <Text bold color="yellow"> diff </Text>
-              {gitDiff ? (
-                <Code source={gitDiff.slice(0, 8000)} format="diff" />
-              ) : (
-                <Text dimColor> clean</Text>
-              )}
-            </Box>
-          </Box>
-
-          {/* Right: file viewer */}
-          <Box flexDirection="column" flexGrow={1} borderStyle="round">
-            <Box flexDirection="row">
-              <Text bold color="green">
-                {' '}{sel ? sel.split('/').pop() : '(none)'}{' '}
-              </Text>
-              {sel && (
-                <Text dimColor>
-                  {' '}L{sc + 1}-{Math.min(sc + viewH, lines.length)}/{lines.length}
-                </Text>
-              )}
-            </Box>
-            {content ? (
-              <Code
-                source={shown}
-                language={LANGS[ext] ?? ''}
-                startLine={sc + 1}
-              />
-            ) : (
-              <Text dimColor> Select a file (1-9)</Text>
-            )}
-          </Box>
-        </Box>
-
-        <Box flexDirection="row">
-          <Input
-            key="goto"
-            label=":"
-            placeholder="line number"
-            onSubmit={async (val) => {
-              const n = parseInt(val, 10)
-              if (!isNaN(n) && n > 0) {
-                await update($, scroll$, () => Math.min(maxSc, Math.max(0, n - 1)))
+              <Text bold color="yellow">diff</Text>
+              {hasDiff
+                ? <Code source={gitDiff.slice(0, 6000)} format="diff" />
+                : <Text dimColor>clean</Text>
               }
-            }}
-          />
+            </Box>
+          </Box>
+
+          {/* Right column: file viewer */}
+          <Box flexDirection="column" flexGrow={1} borderStyle="round">
+            <Text bold color="green">{sel ? sel.split('/').pop() : '(none)'}</Text>
+            {sel && <Text dimColor>L{sc + 1}-{Math.min(sc + viewH, lines.length)}/{lines.length}</Text>}
+            {content
+              ? <Code source={shown} language={LANGS[ext] ?? ''} startLine={sc + 1} />
+              : <Text dimColor>Select a file (1-9)</Text>
+            }
+          </Box>
         </Box>
 
+        {/* Bottom bar */}
         <Box flexDirection="row">
-          <Button key="prev" hotkey="p" variant="plain" onPress={async () => {
+          <Button key="bp" hotkey="p" variant="plain" onPress={async () => {
             await update($, page$, p => Math.max(0, p - 1))
           }}>prev</Button>
           <Text> </Text>
-          <Button key="next-pg" hotkey="n" variant="plain" onPress={async () => {
+          <Button key="bn" hotkey="n" variant="plain" onPress={async () => {
             await update($, page$, p => Math.min(pages - 1, p + 1))
           }}>next</Button>
           <Text> </Text>
-          <Button key="refresh" hotkey="r" variant="plain" onPress={async () => {
+          <Button key="br" hotkey="r" variant="plain" onPress={async () => {
             await loadDir($, dir)
             await loadDiff($)
             if (sel) await loadFile($, sel)
           }}>refresh</Button>
           <Text> </Text>
-          <Button key="scup" hotkey="w" variant="plain" onPress={async () => {
+          <Button key="bw" hotkey="w" variant="plain" onPress={async () => {
             await update($, scroll$, s => Math.max(0, s - Math.floor(viewH / 2)))
-          }}>up</Button>
+          }}>pgup</Button>
           <Text> </Text>
-          <Button key="scdown" hotkey="s" variant="plain" onPress={async () => {
+          <Button key="bs" hotkey="s" variant="plain" onPress={async () => {
             await update($, scroll$, s => Math.min(maxSc, s + Math.floor(viewH / 2)))
-          }}>dn</Button>
+          }}>pgdn</Button>
           <Text>  </Text>
-          <Button key="col-" hotkey="h" variant="plain" onPress={async () => {
+          <Button key="bh" hotkey="h" variant="plain" onPress={async () => {
             await update($, layout$, l => ({ ...l, col: Math.max(15, l.col - 5) }))
             const l = await read($, layout$)
             await $.store.set('cli-mod:layout', l)
           }}>col-</Button>
           <Text> </Text>
-          <Button key="col+" hotkey="l" variant="plain" onPress={async () => {
+          <Button key="bl" hotkey="l" variant="plain" onPress={async () => {
             await update($, layout$, l => ({ ...l, col: Math.min(70, l.col + 5) }))
             const l = await read($, layout$)
             await $.store.set('cli-mod:layout', l)
           }}>col+</Button>
-          <Text> </Text>
-          <Button key="row-" hotkey="j" variant="plain" onPress={async () => {
-            await update($, layout$, l => ({ ...l, row: Math.max(20, l.row - 5) }))
-            const l = await read($, layout$)
-            await $.store.set('cli-mod:layout', l)
-          }}>row-</Button>
-          <Text> </Text>
-          <Button key="row+" hotkey="k" variant="plain" onPress={async () => {
-            await update($, layout$, l => ({ ...l, row: Math.min(85, l.row + 5) }))
-            const l = await read($, layout$)
-            await $.store.set('cli-mod:layout', l)
-          }}>row+</Button>
         </Box>
       </Box>
     )
