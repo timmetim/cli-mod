@@ -1,0 +1,6 @@
+{
+  "name": "cli-mod",
+  "description": "File browser, editor and diff pane for Claude Code",
+  "owner": { "name": "timmetim" },
+  "plugins": [{ "name": "cli-mod", "source": "./" }]
+}

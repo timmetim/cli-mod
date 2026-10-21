@@ -1,0 +1,7 @@
+{
+  "name": "cli-mod",
+  "version": "0.1.0",
+  "description": "File browser, editor and diff pane for Claude Code",
+  "author": { "name": "timmetim" },
+  "types": "./types/index.d.ts"
+}
